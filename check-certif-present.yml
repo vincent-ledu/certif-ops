@@ -1,0 +1,52 @@
+---
+- name: Check certif is present
+  gather_facts: false
+  hosts: all
+
+  environment:
+    PATH: "{{ java_path }}:{{ ansible_env.PATH }}"
+
+  tasks:
+    - name: check certificate ac presence
+      shell: keytool -list -keystore /tmp/cacerts -storepass changeit | grep CA:42:DD:41:74:5F:D0:B8:1E:B9:02:36:2C:F9:D8:BF:71:9D:A1:BD:1B:1E:FC:94:6F:5B:4C:99:F4:2C:1B:9E
+      changed_when: false
+      ignore_errors: yes
+      register: truststoreokac
+
+    - name: check certificate intermediate presence
+      shell: keytool -list -keystore /tmp/cacerts -storepass changeit | grep 95:C0:74:E3:59:02:A1:4A:BD:9D:19:AF:B6:E7:F8:0E:66:9F:F8:E2:36:32:70:53:9D:96:36:13:F0:4A:AA:21
+      changed_when: false
+      ignore_errors: yes
+      register: truststoreokintermediate
+
+    - name: copy cert ac root if not present in the truststore
+      copy:
+        src: google_root_ac.cer
+        dest: /tmp/
+      when: truststoreokac.failed == true
+
+    - name: copy cert intermediate if not present in the truststore
+      copy:
+        src: google_cert_intermediate.cer
+        dest: /tmp/
+      when: truststoreokintermediate.failed == true
+
+    - name: if cert intermediate is not found, add it to the truststore
+      shell: keytool -importcert -file /tmp/google_cert_intermediate.cer -keystore /tmp/cacerts -alias 'googleintermediate' -storepass changeit -noprompt
+      when: truststoreokintermediate.failed == true
+
+    - name: if cert ac is not found, add it to the truststore
+      shell: keytool -importcert -file /tmp/google_root_ac.cer -keystore /tmp/cacerts -alias 'googleac' -storepass changeit -noprompt
+      when: truststoreokac.failed == true
+
+    - name: Remove file google ac file from tmp
+      file:
+        path: /tmp/google_root_ac.cer
+        state: absent
+      when: truststoreokac.failed == true
+
+    - name: Remove file google intermediate file from tmp
+      file:
+        path: /tmp/google_cert_intermediate.cer
+        state: absent
+      when: truststoreokintermediate.failed == true
